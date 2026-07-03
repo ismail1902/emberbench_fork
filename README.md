@@ -61,6 +61,10 @@ pnpm --version
 pm2 --version
 ```
 
+If Node or pnpm is installed through `fnm` or another shell manager, make sure `zsh -lic
+'command -v pnpm'` and `zsh -lic 'command -v pm2'` work on the server. The workflow resolves those
+paths before running the deployment commands.
+
 Prepare the server checkout:
 
 ```bash

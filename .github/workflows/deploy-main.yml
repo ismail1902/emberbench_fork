@@ -83,6 +83,19 @@ jobs:
             "SERVER_PATH='${SERVER_PATH}' EMBERBENCH_HOST='${EMBERBENCH_HOST:-}' EMBERBENCH_PORT='${EMBERBENCH_PORT:-}' bash -s" <<'REMOTE'
           set -euo pipefail
 
+          if command -v zsh >/dev/null 2>&1; then
+            for binary in node pnpm pm2; do
+              binary_path="$(zsh -lic "command -v ${binary}" 2>/dev/null | tail -n 1 || true)"
+              if [ -n "$binary_path" ]; then
+                export PATH="$(dirname "$binary_path"):$PATH"
+              fi
+            done
+          fi
+
+          command -v node
+          command -v pnpm
+          command -v pm2
+
           cd "$SERVER_PATH"
 
           git fetch origin main
