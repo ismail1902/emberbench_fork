@@ -37,7 +37,7 @@ HOST=0.0.0.0 PORT=4173 pm2 start ecosystem.config.cjs --update-env
 For later deploys:
 
 ```bash
-git pull origin dev
+git pull origin main
 pnpm install --frozen-lockfile
 pnpm run build
 pm2 reload emberbench --update-env
@@ -45,21 +45,37 @@ pm2 reload emberbench --update-env
 
 ### GitHub Actions deployment
 
-The repository includes a `Deploy main` workflow. Every push to `main` runs checks, copies the
-repository to `/root/emberbench` on the server, builds it there, and starts or reloads PM2.
+The repository includes a `Deploy main` workflow. Every push to `main` runs checks, sends a
+deployment command to the server, pulls `origin/main` inside `/root/emberbench`, builds there, and
+starts or reloads PM2.
 
 Server prerequisites:
 
 ```bash
 apt update
-apt install -y git rsync curl
+apt install -y git curl
 
-# Install Node.js 22 if your server does not already have a compatible Node runtime.
-curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
-apt install -y nodejs
+# The server should already have Node.js, pnpm, and PM2.
+node --version
+pnpm --version
+pm2 --version
+```
 
-npm install -g pm2 pnpm@11.8.0
+Prepare the server checkout:
+
+```bash
 mkdir -p /root/emberbench
+cd /root/emberbench
+
+# If the repository is not cloned there yet:
+git clone https://github.com/blessingmwiti/emberbench.git .
+
+git checkout main
+git pull origin main
+pnpm install --frozen-lockfile
+pnpm run build
+pm2 start ecosystem.config.cjs
+pm2 save
 ```
 
 Create a deploy SSH key on your local machine:
@@ -89,6 +105,10 @@ Add these GitHub repository secrets under **Settings â†’ Secrets and variables â
 | `DEPLOY_PORT`     | SSH port, usually `22`                                          |
 | `DEPLOY_SSH_KEY`  | Contents of `~/.ssh/emberbench_github_actions`                  |
 | `SSH_KNOWN_HOSTS` | Output of `ssh-keyscan -p 22 YOUR_SERVER_IP` for stricter trust |
+
+The server checkout at `/root/emberbench` must be able to pull `origin main`. For a public
+repository, HTTPS clone is enough. For a private repository, configure a deploy key or another
+server-side GitHub credential for that checkout.
 
 Optional GitHub repository variables:
 

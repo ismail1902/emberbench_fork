@@ -67,32 +67,7 @@ jobs:
           fi
           chmod 600 ~/.ssh/known_hosts
 
-      - name: Sync repository to server
-        env:
-          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
-          DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
-          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
-        run: |
-          set -euo pipefail
-          RSYNC_RSH="ssh -i ~/.ssh/emberbench_deploy -p ${DEPLOY_PORT:-22} -o IdentitiesOnly=yes"
-
-          ssh -i ~/.ssh/emberbench_deploy \
-            -p "${DEPLOY_PORT:-22}" \
-            -o IdentitiesOnly=yes \
-            "${DEPLOY_USER:-root}@${DEPLOY_HOST}" \
-            "mkdir -p '${SERVER_PATH}'"
-
-          rsync -az --delete \
-            --exclude='.DS_Store' \
-            --exclude='.env' \
-            --exclude='.git/' \
-            --exclude='dist/' \
-            --exclude='node_modules/' \
-            --exclude='.pnpm-store/' \
-            -e "$RSYNC_RSH" \
-            ./ "${DEPLOY_USER:-root}@${DEPLOY_HOST}:${SERVER_PATH}/"
-
-      - name: Build and reload PM2 on server
+      - name: Pull, build, and reload PM2 on server
         env:
           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
           DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
@@ -105,19 +80,14 @@ jobs:
             -p "${DEPLOY_PORT:-22}" \
             -o IdentitiesOnly=yes \
             "${DEPLOY_USER:-root}@${DEPLOY_HOST}" \
-            "SERVER_PATH='${SERVER_PATH}' EMBERBENCH_HOST='${EMBERBENCH_HOST:-}' EMBERBENCH_PORT='${EMBERBENCH_PORT:-}' PNPM_VERSION='${PNPM_VERSION}' bash -s" <<'REMOTE'
+            "SERVER_PATH='${SERVER_PATH}' EMBERBENCH_HOST='${EMBERBENCH_HOST:-}' EMBERBENCH_PORT='${EMBERBENCH_PORT:-}' bash -s" <<'REMOTE'
           set -euo pipefail
 
           cd "$SERVER_PATH"
 
-          if command -v corepack >/dev/null 2>&1; then
-            corepack enable
-            corepack prepare "pnpm@${PNPM_VERSION}" --activate
-          fi
-
-          if ! command -v pnpm >/dev/null 2>&1; then
-            npm install -g "pnpm@${PNPM_VERSION}"
-          fi
+          git fetch origin main
+          git checkout main
+          git reset --hard origin/main
 
           pnpm install --frozen-lockfile
           pnpm run build
