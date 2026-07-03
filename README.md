@@ -43,6 +43,78 @@ pnpm run build
 pm2 reload emberbench --update-env
 ```
 
+### GitHub Actions deployment
+
+The repository includes a `Deploy main` workflow. Every push to `main` runs checks, copies the
+repository to `/root/emberbench` on the server, builds it there, and starts or reloads PM2.
+
+Server prerequisites:
+
+```bash
+apt update
+apt install -y git rsync curl
+
+# Install Node.js 22 if your server does not already have a compatible Node runtime.
+curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
+apt install -y nodejs
+
+npm install -g pm2 pnpm@11.8.0
+mkdir -p /root/emberbench
+```
+
+Create a deploy SSH key on your local machine:
+
+```bash
+ssh-keygen -t ed25519 -C "emberbench-github-actions" -f ~/.ssh/emberbench_github_actions
+```
+
+Add the public key to the server:
+
+```bash
+ssh-copy-id -i ~/.ssh/emberbench_github_actions.pub root@YOUR_SERVER_IP
+```
+
+Or manually append it to:
+
+```bash
+/root/.ssh/authorized_keys
+```
+
+Add these GitHub repository secrets under **Settings → Secrets and variables → Actions**:
+
+| Name              | Value                                                           |
+| ----------------- | --------------------------------------------------------------- |
+| `DEPLOY_HOST`     | Server IP address or hostname                                   |
+| `DEPLOY_USER`     | `root`                                                          |
+| `DEPLOY_PORT`     | SSH port, usually `22`                                          |
+| `DEPLOY_SSH_KEY`  | Contents of `~/.ssh/emberbench_github_actions`                  |
+| `SSH_KNOWN_HOSTS` | Output of `ssh-keyscan -p 22 YOUR_SERVER_IP` for stricter trust |
+
+Optional GitHub repository variables:
+
+| Name              | Default     | Use                                                                 |
+| ----------------- | ----------- | ------------------------------------------------------------------- |
+| `EMBERBENCH_HOST` | `127.0.0.1` | Keep this for Nginx/Caddy reverse proxy; use `0.0.0.0` for direct   |
+| `EMBERBENCH_PORT` | `4173`      | Internal Node/PM2 port                                              |
+
+If the app sits behind Nginx, proxy to the PM2 process:
+
+```nginx
+server {
+  server_name emberbench.example.com;
+
+  location / {
+    proxy_pass http://127.0.0.1:4173;
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+  }
+}
+```
+
+Use HTTPS in production. Browser APIs such as WebGPU require a secure context outside localhost.
+
 ## Why Emberbench?
 
 Local AI is powerful, but getting from “I found a model” to “I am using it” still commonly involves installing runtimes, choosing model formats, understanding quantization, configuring GPU backends, starting servers, and connecting a user interface.
