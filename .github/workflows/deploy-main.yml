@@ -1,0 +1,106 @@
+name: Deploy main
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+concurrency:
+  group: emberbench-production
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  NODE_VERSION: '22'
+  PNPM_VERSION: '11.8.0'
+  SERVER_PATH: /root/emberbench
+
+jobs:
+  deploy:
+    name: Build and deploy
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Enable pnpm
+        run: |
+          corepack enable
+          corepack prepare pnpm@${PNPM_VERSION} --activate
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Verify production build
+        run: pnpm run check
+
+      - name: Check dependency audit
+        run: pnpm run security:check
+
+      - name: Configure SSH
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          SSH_KNOWN_HOSTS: ${{ secrets.SSH_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/emberbench_deploy
+          chmod 600 ~/.ssh/emberbench_deploy
+
+          if [ -n "${SSH_KNOWN_HOSTS:-}" ]; then
+            printf '%s\n' "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          else
+            ssh-keyscan -p "${DEPLOY_PORT:-22}" "$DEPLOY_HOST" > ~/.ssh/known_hosts
+          fi
+          chmod 600 ~/.ssh/known_hosts
+
+      - name: Pull, build, and reload PM2 on server
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          EMBERBENCH_HOST: ${{ vars.EMBERBENCH_HOST }}
+          EMBERBENCH_PORT: ${{ vars.EMBERBENCH_PORT }}
+        run: |
+          set -euo pipefail
+          ssh -i ~/.ssh/emberbench_deploy \
+            -p "${DEPLOY_PORT:-22}" \
+            -o IdentitiesOnly=yes \
+            "${DEPLOY_USER:-root}@${DEPLOY_HOST}" \
+            "SERVER_PATH='${SERVER_PATH}' EMBERBENCH_HOST='${EMBERBENCH_HOST:-}' EMBERBENCH_PORT='${EMBERBENCH_PORT:-}' bash -s" <<'REMOTE'
+          set -euo pipefail
+
+          cd "$SERVER_PATH"
+
+          git fetch origin main
+          git checkout main
+          git reset --hard origin/main
+
+          pnpm install --frozen-lockfile
+          pnpm run build
+
+          export HOST="${EMBERBENCH_HOST:-127.0.0.1}"
+          export PORT="${EMBERBENCH_PORT:-4173}"
+          export NODE_ENV=production
+
+          if pm2 describe emberbench >/dev/null 2>&1; then
+            pm2 reload emberbench --update-env
+          else
+            pm2 start ecosystem.config.cjs --update-env
+          fi
+
+          pm2 save
+          REMOTE

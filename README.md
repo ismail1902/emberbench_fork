@@ -37,11 +37,103 @@ HOST=0.0.0.0 PORT=4173 pm2 start ecosystem.config.cjs --update-env
 For later deploys:
 
 ```bash
-git pull origin dev
+git pull origin main
 pnpm install --frozen-lockfile
 pnpm run build
 pm2 reload emberbench --update-env
 ```
+
+### GitHub Actions deployment
+
+The repository includes a `Deploy main` workflow. Every push to `main` runs checks, sends a
+deployment command to the server, pulls `origin/main` inside `/root/emberbench`, builds there, and
+starts or reloads PM2.
+
+Server prerequisites:
+
+```bash
+apt update
+apt install -y git curl
+
+# The server should already have Node.js, pnpm, and PM2.
+node --version
+pnpm --version
+pm2 --version
+```
+
+Prepare the server checkout:
+
+```bash
+mkdir -p /root/emberbench
+cd /root/emberbench
+
+# If the repository is not cloned there yet:
+git clone https://github.com/blessingmwiti/emberbench.git .
+
+git checkout main
+git pull origin main
+pnpm install --frozen-lockfile
+pnpm run build
+pm2 start ecosystem.config.cjs
+pm2 save
+```
+
+Create a deploy SSH key on your local machine:
+
+```bash
+ssh-keygen -t ed25519 -C "emberbench-github-actions" -f ~/.ssh/emberbench_github_actions
+```
+
+Add the public key to the server:
+
+```bash
+ssh-copy-id -i ~/.ssh/emberbench_github_actions.pub root@YOUR_SERVER_IP
+```
+
+Or manually append it to:
+
+```bash
+/root/.ssh/authorized_keys
+```
+
+Add these GitHub repository secrets under **Settings → Secrets and variables → Actions**:
+
+| Name              | Value                                                           |
+| ----------------- | --------------------------------------------------------------- |
+| `DEPLOY_HOST`     | Server IP address or hostname                                   |
+| `DEPLOY_USER`     | `root`                                                          |
+| `DEPLOY_PORT`     | SSH port, usually `22`                                          |
+| `DEPLOY_SSH_KEY`  | Contents of `~/.ssh/emberbench_github_actions`                  |
+| `SSH_KNOWN_HOSTS` | Output of `ssh-keyscan -p 22 YOUR_SERVER_IP` for stricter trust |
+
+The server checkout at `/root/emberbench` must be able to pull `origin main`. For a public
+repository, HTTPS clone is enough. For a private repository, configure a deploy key or another
+server-side GitHub credential for that checkout.
+
+Optional GitHub repository variables:
+
+| Name              | Default     | Use                                                                 |
+| ----------------- | ----------- | ------------------------------------------------------------------- |
+| `EMBERBENCH_HOST` | `127.0.0.1` | Keep this for Nginx/Caddy reverse proxy; use `0.0.0.0` for direct   |
+| `EMBERBENCH_PORT` | `4173`      | Internal Node/PM2 port                                              |
+
+If the app sits behind Nginx, proxy to the PM2 process:
+
+```nginx
+server {
+  server_name emberbench.example.com;
+
+  location / {
+    proxy_pass http://127.0.0.1:4173;
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+  }
+}
+```
+
+Use HTTPS in production. Browser APIs such as WebGPU require a secure context outside localhost.
 
 ## Why Emberbench?
 
