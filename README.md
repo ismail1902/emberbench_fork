@@ -316,7 +316,7 @@ Five models should be **available**, but they should not all remain loaded in GP
 
 ### Inference foundation: ONNX Runtime Web
 
-[ONNX Runtime Web](https://onnxruntime.ai/docs/get-started/with-javascript/web.html) provides WebGPU and WebAssembly execution paths. WebGPU is preferred, with WebAssembly fallback only for models and tasks where it remains practical.
+[ONNX Runtime Web] (https://onnxruntime.ai/docs/get-started/with-javascript/web.html) provides WebGPU and WebAssembly execution paths. WebGPU is preferred, with WebAssembly fallback only for models and tasks where it remains practical.
 
 ### Optional optimized LLM adapter: WebLLM
 
